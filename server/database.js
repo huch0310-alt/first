@@ -1,13 +1,29 @@
 const { Sequelize, DataTypes } = require('sequelize');
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
+
+// 数据库存储路径配置
+// 生产环境：使用 /var/data/ 目录，避免代码更新导致数据丢失
+// 开发环境：使用项目目录
+const isProduction = process.env.NODE_ENV === 'production';
+const dbDir = isProduction ? '/var/data' : __dirname;
+const dbPath = path.join(dbDir, 'market.sqlite');
+
+// 确保数据库目录存在
+if (isProduction && !fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+  console.log(`创建数据库目录: ${dbDir}`);
+}
 
 // Initialize SQLite database
 const sequelize = new Sequelize({
   dialect: 'sqlite',
-  storage: path.join(__dirname, 'market.sqlite'),
+  storage: dbPath,
   logging: false
 });
+
+console.log(`数据库路径: ${dbPath}`);
 
 // Define Models
 
