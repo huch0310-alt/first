@@ -218,6 +218,7 @@ const Products = () => {
 };
 
 const AddProductModal = ({ onClose, onSave }) => {
+    const fileInputRef = React.useRef(null);
     const [formData, setFormData] = useState({
         name: '',
         purchase_price: '',
@@ -227,6 +228,59 @@ const AddProductModal = ({ onClose, onSave }) => {
         image_url: '',
         creator_id: 2
     });
+    const [uploading, setUploading] = useState(false);
+    const [previewImage, setPreviewImage] = useState(null);
+    const [uploadMessage, setUploadMessage] = useState(null);
+
+    // 处理图片选择
+    const handleImageSelect = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            if (!file.type.startsWith('image/')) {
+                setUploadMessage({ type: 'error', text: '请选择图片文件' });
+                return;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                setUploadMessage({ type: 'error', text: '图片大小不能超过10MB' });
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                setPreviewImage(event.target.result);
+            };
+            reader.readAsDataURL(file);
+            uploadImage(file);
+        }
+    };
+
+    // 上传图片
+    const uploadImage = async (file) => {
+        setUploading(true);
+        setUploadMessage(null);
+        try {
+            const uploadData = new FormData();
+            uploadData.append('image', file);
+            const response = await api.post('/upload', uploadData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            if (response.data.success) {
+                setFormData(prev => ({ ...prev, image_url: response.data.url }));
+                setUploadMessage({ type: 'success', text: '图片上传成功！' });
+            }
+        } catch (err) {
+            setUploadMessage({ type: 'error', text: '上传失败：' + (err.response?.data?.error || err.message) });
+            setPreviewImage(null);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // 清除图片
+    const clearImage = () => {
+        setPreviewImage(null);
+        setFormData(prev => ({ ...prev, image_url: '' }));
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
 
     const handleSubmit = () => {
         if (!formData.name || !formData.purchase_price) {
@@ -243,7 +297,7 @@ const AddProductModal = ({ onClose, onSave }) => {
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl w-full max-w-lg p-6">
+            <div className="bg-white rounded-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold">采购录入</h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
@@ -307,23 +361,55 @@ const AddProductModal = ({ onClose, onSave }) => {
                 </div>
 
                 <div className="form-group">
-                    <label className="form-label">图片链接</label>
-                    <div className="flex gap-2">
-                        <input
-                            className="form-input"
-                            placeholder="https://..."
-                            value={formData.image_url}
-                            onChange={e => setFormData({ ...formData, image_url: e.target.value })}
-                        />
-                        <button className="btn btn-secondary">
-                            <Camera size={18} />
+                    <label className="form-label">商品图片</label>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        style={{ display: 'none' }}
+                    />
+
+                    {previewImage ? (
+                        <div className="relative">
+                            <img src={previewImage} alt="预览" className="w-full h-40 object-cover rounded-lg border" />
+                            {uploading && (
+                                <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
+                                    <span className="text-white">压缩上传中...</span>
+                                </div>
+                            )}
+                            {!uploading && (
+                                <button
+                                    type="button"
+                                    onClick={clearImage}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-full p-6 border-2 border-dashed border-slate-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors flex flex-col items-center gap-2 text-slate-500"
+                        >
+                            <Camera size={24} />
+                            <span className="text-sm">点击选择图片</span>
+                            <span className="text-xs text-emerald-600">自动压缩优化</span>
                         </button>
-                    </div>
+                    )}
+
+                    {uploadMessage && (
+                        <p className={`text-sm mt-2 ${uploadMessage.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+                            {uploadMessage.text}
+                        </p>
+                    )}
                 </div>
 
                 <div className="flex gap-3 mt-6">
                     <button className="btn btn-secondary flex-1" onClick={onClose}>取消</button>
-                    <button className="btn btn-primary flex-1" onClick={handleSubmit}>
+                    <button className="btn btn-primary flex-1" onClick={handleSubmit} disabled={uploading}>
                         <Plus size={16} /> 确认录入
                     </button>
                 </div>
