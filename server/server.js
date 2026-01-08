@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sharp = require('sharp');
 const { initDB, User, hashPassword, comparePassword } = require('./database');
 const productRoutes = require('./routes/products');
 const orderRoutes = require('./routes/orders');
@@ -18,18 +19,8 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// 配置multer存储
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
-        // 生成唯一文件名
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        cb(null, 'product-' + uniqueSuffix + ext);
-    }
-});
+// 配置multer使用内存存储（便于sharp处理）
+const storage = multer.memoryStorage();
 
 const upload = multer({
     storage: storage,
@@ -65,21 +56,37 @@ app.get('/', (req, res) => {
     res.send('B2B 生鲜系统后端已启动 (B2B Market Server is Running)');
 });
 
-// API: 图片上传
-app.post('/api/upload', upload.single('image'), (req, res) => {
+// API: 图片上传（带压缩）
+app.post('/api/upload', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: '没有上传文件' });
         }
+
+        // 生成唯一文件名（使用webp格式）
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const filename = `product-${uniqueSuffix}.webp`;
+        const outputPath = path.join(uploadsDir, filename);
+
+        // 使用sharp压缩图片
+        await sharp(req.file.buffer)
+            .resize(800, 800, {
+                fit: 'inside',           // 保持比例，不超过800x800
+                withoutEnlargement: true // 小图不放大
+            })
+            .webp({ quality: 80 })       // 转换为WebP，质量80%
+            .toFile(outputPath);
+
         // 返回图片访问URL
-        const imageUrl = `/uploads/${req.file.filename}`;
+        const imageUrl = `/uploads/${filename}`;
         res.json({
             success: true,
             url: imageUrl,
-            filename: req.file.filename
+            filename: filename
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('图片处理错误:', err);
+        res.status(500).json({ error: '图片处理失败: ' + err.message });
     }
 });
 
