@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { initDB, User, hashPassword, comparePassword } = require('./database');
 const productRoutes = require('./routes/products');
 const orderRoutes = require('./routes/orders');
@@ -9,10 +12,45 @@ const statsRoutes = require('./routes/stats');
 const app = express();
 const PORT = 3000;
 
+// 确保uploads目录存在
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// 配置multer存储
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadsDir);
+    },
+    filename: (req, file, cb) => {
+        // 生成唯一文件名
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, 'product-' + uniqueSuffix + ext);
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 限制10MB
+    fileFilter: (req, file, cb) => {
+        // 只允许图片
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        if (extname && mimetype) {
+            cb(null, true);
+        } else {
+            cb(new Error('只支持图片格式 (jpeg, jpg, png, gif, webp)'));
+        }
+    }
+});
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static('uploads'));
+app.use('/uploads', express.static(uploadsDir));
 
 // Initialize DB
 initDB();
@@ -25,6 +63,24 @@ app.use('/api/stats', statsRoutes);
 // Basic Routes
 app.get('/', (req, res) => {
     res.send('B2B 生鲜系统后端已启动 (B2B Market Server is Running)');
+});
+
+// API: 图片上传
+app.post('/api/upload', upload.single('image'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: '没有上传文件' });
+        }
+        // 返回图片访问URL
+        const imageUrl = `/uploads/${req.file.filename}`;
+        res.json({
+            success: true,
+            url: imageUrl,
+            filename: req.file.filename
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // API: 获取所有用户

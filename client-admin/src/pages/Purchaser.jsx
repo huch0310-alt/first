@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Plus, Package, LogOut, User } from 'lucide-react';
+import { Camera, Plus, Package, LogOut, User, Image, X, Loader } from 'lucide-react';
 import api from '../api';
 
 const Purchaser = () => {
     const navigate = useNavigate();
+    const fileInputRef = useRef(null);
 
     // 获取当前登录用户
     const currentUser = JSON.parse(localStorage.getItem('adminUser') || '{}');
@@ -18,7 +19,9 @@ const Purchaser = () => {
         creator_id: currentUser.id || 2
     });
     const [loading, setLoading] = useState(false);
+    const [uploading, setUploading] = useState(false);
     const [message, setMessage] = useState(null);
+    const [previewImage, setPreviewImage] = useState(null);
 
     useEffect(() => {
         // 未登录时跳转到登录页
@@ -26,6 +29,78 @@ const Purchaser = () => {
             navigate('/login');
         }
     }, []);
+
+    // 处理图片选择
+    const handleImageSelect = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            // 验证文件类型
+            if (!file.type.startsWith('image/')) {
+                setMessage({ type: 'error', text: '请选择图片文件' });
+                return;
+            }
+            // 验证文件大小 (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                setMessage({ type: 'error', text: '图片大小不能超过10MB' });
+                return;
+            }
+            // 预览图片
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                setPreviewImage(event.target.result);
+            };
+            reader.readAsDataURL(file);
+            // 上传图片
+            uploadImage(file);
+        }
+    };
+
+    // 上传图片到服务器
+    const uploadImage = async (file) => {
+        setUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            const response = await api.post('/upload', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+
+            if (response.data.success) {
+                setFormData(prev => ({ ...prev, image_url: response.data.url }));
+                setMessage({ type: 'success', text: '图片上传成功！' });
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: '图片上传失败：' + (err.response?.data?.error || err.message) });
+            setPreviewImage(null);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // 清除图片
+    const clearImage = () => {
+        setPreviewImage(null);
+        setFormData(prev => ({ ...prev, image_url: '' }));
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    // 打开图片选择（相机或相册）
+    const openImagePicker = (capture = false) => {
+        if (fileInputRef.current) {
+            // capture属性决定是打开相机还是相册
+            if (capture) {
+                fileInputRef.current.setAttribute('capture', 'environment');
+            } else {
+                fileInputRef.current.removeAttribute('capture');
+            }
+            fileInputRef.current.click();
+        }
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -44,6 +119,7 @@ const Purchaser = () => {
                 description: '',
                 image_url: ''
             });
+            setPreviewImage(null);
         } catch (err) {
             setMessage({ type: 'error', text: '录入失败：' + err.message });
         } finally {
@@ -144,22 +220,73 @@ const Purchaser = () => {
                 </div>
 
                 <div className="input-group">
-                    <label className="input-label">图片链接</label>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            className="input"
-                            placeholder="https://..."
-                            value={formData.image_url}
-                            onChange={e => setFormData({ ...formData, image_url: e.target.value })}
-                        />
-                        <button type="button" className="p-3 bg-slate-100 rounded-lg">
-                            <Camera size={20} className="text-slate-500" />
-                        </button>
-                    </div>
+                    <label className="input-label">商品图片</label>
+
+                    {/* 隐藏的文件输入 */}
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        style={{ display: 'none' }}
+                    />
+
+                    {/* 图片预览 */}
+                    {previewImage ? (
+                        <div className="relative mb-3">
+                            <img
+                                src={previewImage}
+                                alt="预览"
+                                className="w-full h-48 object-cover rounded-lg"
+                            />
+                            {uploading && (
+                                <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
+                                    <Loader className="w-8 h-8 text-white animate-spin" />
+                                    <span className="text-white ml-2">上传中...</span>
+                                </div>
+                            )}
+                            {!uploading && (
+                                <button
+                                    type="button"
+                                    onClick={clearImage}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full"
+                                >
+                                    <X size={16} />
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            {/* 拍照按钮 */}
+                            <button
+                                type="button"
+                                onClick={() => openImagePicker(true)}
+                                className="flex-1 p-4 bg-blue-50 rounded-lg flex flex-col items-center gap-2 text-blue-600 hover:bg-blue-100 transition-colors"
+                            >
+                                <Camera size={28} />
+                                <span className="text-sm">拍照</span>
+                            </button>
+                            {/* 相册按钮 */}
+                            <button
+                                type="button"
+                                onClick={() => openImagePicker(false)}
+                                className="flex-1 p-4 bg-emerald-50 rounded-lg flex flex-col items-center gap-2 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                            >
+                                <Image size={28} />
+                                <span className="text-sm">从相册选择</span>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* 显示已上传的URL */}
+                    {formData.image_url && (
+                        <p className="text-sm text-emerald-600 mt-2">
+                            ✓ 图片已上传: {formData.image_url}
+                        </p>
+                    )}
                 </div>
 
-                <button type="submit" disabled={loading} className="btn btn-primary mt-4">
+                <button type="submit" disabled={loading || uploading} className="btn btn-primary mt-4">
                     {loading ? '提交中...' : <><Plus size={20} /> 确认录入</>}
                 </button>
             </form>
@@ -168,3 +295,4 @@ const Purchaser = () => {
 };
 
 export default Purchaser;
+
